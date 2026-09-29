@@ -1,3 +1,5 @@
 plugins {
     id 'com.android.application' version '7.4.2' apply false
+    // Só ativado no app/build.gradle se android/app/google-services.json existir.
+    id 'com.google.gms.google-services' version '4.4.2' apply false
 }

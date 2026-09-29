@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mavic Telemetry — Nuvem</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+  :root {
+    --bg: #0e1116; --panel: #171b22; --panel2: #1e232c; --line: #2a303b;
+    --text: #e6e9ef; --muted: #8b93a1; --accent: #38bdf8;
+    --ok: #34d399; --warn: #fbbf24; --bad: #f87171;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  [hidden] { display: none !important; }
+  body { margin: 0; background: var(--bg); color: var(--text); display: flex; flex-direction: column;
+         font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+
+  header { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; padding: 10px 16px;
+           background: var(--panel); border-bottom: 1px solid var(--line); }
+  header h1 { font-size: 16px; margin: 0; font-weight: 650; }
+  .pill { display: inline-flex; align-items: center; gap: 7px; padding: 3px 10px; border-radius: 99px;
+          background: var(--panel2); border: 1px solid var(--line); font-weight: 600; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); }
+  .live .dot { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+  .stale .dot { background: var(--warn); }
+  .off .dot { background: var(--bad); }
+  .spacer { flex: 1; }
+  select, button { background: var(--panel2); color: var(--text); border: 1px solid var(--line);
+                    border-radius: 6px; padding: 6px 10px; font: inherit; cursor: pointer; }
+  button:hover, select:hover { border-color: var(--accent); }
+
+  main { display: grid; grid-template-columns: minmax(0, 3fr) minmax(320px, 2fr); gap: 12px;
+         padding: 12px; flex: 1; min-height: 0; }
+  .mapwrap { position: relative; min-height: 360px; border-radius: 10px; overflow: hidden;
+             border: 1px solid var(--line); }
+  #map { position: absolute; inset: 0; background: #222; }
+
+  .side { overflow: auto; min-height: 0; display: flex; flex-direction: column; gap: 12px; padding-right: 2px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+  .card h2 { margin: 0 0 8px; font-size: 12px; font-weight: 650; letter-spacing: .06em;
+             text-transform: uppercase; color: var(--muted); }
+  .tiles { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .tile { background: var(--panel2); border: 1px solid var(--line); border-radius: 10px; padding: 9px 11px; min-width: 0; }
+  .tile .k { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+  .tile .v { font-size: 22px; font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .tile .u { font-size: 12px; color: var(--muted); font-weight: 500; margin-left: 2px; }
+
+  .bar { height: 10px; background: var(--panel2); border-radius: 6px; overflow: hidden; margin-top: 6px; }
+  .bar > i { display: block; height: 100%; width: 0; background: var(--ok); transition: width .3s; }
+  .kv { display: grid; grid-template-columns: auto 1fr auto; gap: 6px 10px; align-items: center; margin-top: 6px; }
+  .kv span:first-child { color: var(--muted); }
+  .kv span:last-child { font-variant-numeric: tabular-nums; }
+
+  .msg { color: var(--muted); font-size: 12px; padding: 8px 0; }
+  a.linklike { color: var(--accent); cursor: pointer; text-decoration: underline; }
+
+  @media (max-width: 860px) {
+    main { grid-template-columns: 1fr; }
+    .mapwrap { min-height: 260px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🚁 Mavic Telemetry</h1>
+  <span class="pill off" id="pillAuth"><span class="dot"></span><span id="authText">conectando à nuvem...</span></span>
+  <label class="msg" style="display:flex;align-items:center;gap:6px;">
+    Voo:
+    <select id="selFlight"><option>carregando…</option></select>
+  </label>
+  <span class="pill off" id="pillLive"><span class="dot"></span><span id="liveText">sem dados</span></span>
+  <div class="spacer"></div>
+  <button id="btnExport">Exportar CSV</button>
+</header>
+
+<main>
+  <div class="mapwrap">
+    <div id="map"></div>
+  </div>
+
+  <div class="side">
+    <div class="card">
+      <h2>Posição / GPS</h2>
+      <div class="tiles">
+        <div class="tile"><div class="k">Altitude</div><div class="v" id="vAlt">--<span class="u">m</span></div></div>
+        <div class="tile"><div class="k">Vel. horizontal</div><div class="v" id="vSpeed">--<span class="u">m/s</span></div></div>
+        <div class="tile"><div class="k">Satélites</div><div class="v" id="vSats">--</div></div>
+        <div class="tile"><div class="k">Sinal GPS</div><div class="v" id="vGps">--</div></div>
+      </div>
+      <div class="kv">
+        <span>Latitude</span><span id="vLat">--</span><span></span>
+        <span>Longitude</span><span id="vLon">--</span><span></span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Bateria</h2>
+      <div class="bar"><i id="barBat"></i></div>
+      <div class="kv">
+        <span>Carga</span><span id="vBatPct">--</span><span>%</span>
+        <span>Tensão</span><span id="vBatV">--</span><span>V</span>
+        <span>Corrente</span><span id="vBatA">--</span><span>A</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Estado de voo</h2>
+      <div class="kv">
+        <span>Modo</span><span id="vMode">--</span><span></span>
+        <span>Voando</span><span id="vFlying">--</span><span></span>
+        <span>Motores</span><span id="vMotors">--</span><span></span>
+        <span>Tempo</span><span id="vFlightTime">--</span><span>s</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Voo selecionado</h2>
+      <div class="kv">
+        <span>Início</span><span id="vFlightStart">--</span><span></span>
+        <span>Dispositivo</span><span id="vDevice">--</span><span></span>
+        <span>Pontos gravados</span><span id="vLogCount">--</span><span></span>
+      </div>
+      <p class="msg">O app Android envia ~1 ponto por segundo para esta lista; a tela do celular mostra 10/s localmente.</p>
+    </div>
+  </div>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script src="firebase-config.js" onerror="window.__noConfig=true"></script>
+<script>
+"use strict";
+
+const $ = (id) => document.getElementById(id);
+const fmt = (v, d = 1) => (typeof v === "number" && isFinite(v)) ? v.toFixed(d) : "--";
+
+// ---- Mapa ----
+const map = L.map("map", { zoomControl: true }).setView([0, 0], 3);
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  attribution: "&copy; OpenStreetMap", maxZoom: 20,
+}).addTo(map);
+let marker = null;
+let trail = L.polyline([], { color: "#38bdf8", weight: 3 }).addTo(map);
+let followDrone = true;
+
+function updateMap(lat, lon) {
+  if (typeof lat !== "number" || typeof lon !== "number") return;
+  const pos = [lat, lon];
+  if (!marker) {
+    marker = L.circleMarker(pos, { radius: 7, color: "#38bdf8", fillColor: "#38bdf8", fillOpacity: 1 }).addTo(map);
+    map.setView(pos, 17);
+  } else {
+    marker.setLatLng(pos);
+  }
+  trail.addLatLng(pos);
+  if (followDrone) map.panTo(pos, { animate: true });
+}
+map.on("dragstart", () => { followDrone = false; });
+
+// ---- Estado "ao vivo / sem dados" ----
+let lastMsgAt = 0;
+setInterval(() => {
+  const ageS = lastMsgAt ? (Date.now() - lastMsgAt) / 1000 : Infinity;
+  const pill = $("pillLive"), text = $("liveText");
+  pill.classList.remove("live", "stale", "off");
+  if (!lastMsgAt) { pill.classList.add("off"); text.textContent = "sem dados"; }
+  else if (ageS < 5) { pill.classList.add("live"); text.textContent = "ao vivo"; }
+  else { pill.classList.add("stale"); text.textContent = `sem dados há ${Math.round(ageS)}s`; }
+}, 1000);
+
+function renderLive(v) {
+  lastMsgAt = Date.now();
+  $("vAlt").innerHTML = fmt(v.alt) + '<span class="u">m</span>';
+  $("vSpeed").innerHTML = fmt(v.speed_h) + '<span class="u">m/s</span>';
+  $("vSats").textContent = v.sats ?? "--";
+  $("vGps").textContent = v.gps_level ?? "--";
+  $("vLat").textContent = typeof v.lat === "number" ? v.lat.toFixed(6) : "--";
+  $("vLon").textContent = typeof v.lon === "number" ? v.lon.toFixed(6) : "--";
+  $("vBatPct").textContent = v.bat_pct ?? "--";
+  $("vBatV").textContent = typeof v.bat_v_mv === "number" ? (v.bat_v_mv / 1000).toFixed(2) : "--";
+  $("vBatA").textContent = typeof v.bat_a_ma === "number" ? (v.bat_a_ma / 1000).toFixed(2) : "--";
+  const pct = typeof v.bat_pct === "number" ? Math.max(0, Math.min(100, v.bat_pct)) : 0;
+  const bar = $("barBat");
+  bar.style.width = pct + "%";
+  bar.style.background = pct < 20 ? "var(--bad)" : pct < 40 ? "var(--warn)" : "var(--ok)";
+  $("vMode").textContent = v.flight_mode ?? "--";
+  $("vFlying").textContent = v.is_flying === true ? "sim" : v.is_flying === false ? "não" : "--";
+  $("vMotors").textContent = v.motors_on === true ? "ligados" : v.motors_on === false ? "desligados" : "--";
+  $("vFlightTime").textContent = v.flight_time_s ?? "--";
+  updateMap(v.lat, v.lon);
+}
+
+// ---- Firebase ----
+let db = null;
+let currentFlightId = null;
+let liveRef = null, logRef = null;
+
+function setAuthPill(ok, text) {
+  const pill = $("pillAuth");
+  pill.classList.toggle("live", ok);
+  pill.classList.toggle("off", !ok);
+  $("authText").textContent = text;
+}
+
+function loadFlightsList() {
+  db.ref("flights").orderByChild("meta/startedAt").limitToLast(30).once("value", (snap) => {
+    const sel = $("selFlight");
+    sel.innerHTML = "";
+    const entries = [];
+    snap.forEach((child) => {
+      const meta = child.val().meta || {};
+      entries.push({ id: child.key, startedAt: meta.startedAt || 0, device: meta.device || "?" });
+    });
+    entries.sort((a, b) => b.startedAt - a.startedAt);
+    if (entries.length === 0) {
+      sel.innerHTML = "<option>nenhum voo ainda</option>";
+      return;
+    }
+    for (const e of entries) {
+      const opt = document.createElement("option");
+      opt.value = e.id;
+      const when = e.startedAt ? new Date(e.startedAt).toLocaleString("pt-BR") : e.id;
+      opt.textContent = `${when} — ${e.device}`;
+      sel.appendChild(opt);
+    }
+    sel.value = entries[0].id;
+    selectFlight(entries[0].id);
+  });
+}
+
+function selectFlight(flightId) {
+  currentFlightId = flightId;
+  if (liveRef) liveRef.off();
+  if (logRef) logRef.off();
+  trail.setLatLngs([]);
+  marker = null;
+
+  const base = db.ref("flights").child(flightId);
+  base.child("meta").once("value", (snap) => {
+    const meta = snap.val() || {};
+    $("vFlightStart").textContent = meta.startedAt ? new Date(meta.startedAt).toLocaleString("pt-BR") : "--";
+    $("vDevice").textContent = meta.device || "--";
+  });
+  base.child("log").once("value", (snap) => {
+    $("vLogCount").textContent = snap.numChildren();
+  });
+
+  liveRef = base.child("live");
+  liveRef.on("value", (snap) => {
+    const v = snap.val();
+    if (v) renderLive(v);
+  });
+}
+
+$("selFlight").addEventListener("change", (e) => selectFlight(e.target.value));
+
+$("btnExport").addEventListener("click", () => {
+  if (!currentFlightId) return;
+  db.ref("flights").child(currentFlightId).child("log").once("value", (snap) => {
+    const rows = [];
+    const fields = new Set(["ts"]);
+    snap.forEach((child) => {
+      const row = child.val();
+      Object.keys(row).forEach((k) => fields.add(k));
+      rows.push(row);
+    });
+    const cols = Array.from(fields);
+    const lines = [cols.join(",")];
+    for (const row of rows) {
+      lines.push(cols.map((c) => (row[c] ?? "")).join(","));
+    }
+    const blob = new Blob([lines.join("\n")], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `mavic_${currentFlightId}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  });
+});
+
+function boot() {
+  if (window.__noConfig || typeof firebaseConfig === "undefined") {
+    setAuthPill(false, "faltando firebase-config.js (veja firebase/README.md)");
+    return;
+  }
+  firebase.initializeApp(firebaseConfig);
+  db = firebase.database();
+  setAuthPill(false, "entrando...");
+  firebase.auth().signInAnonymously().catch((err) => {
+    setAuthPill(false, "erro de login: " + err.message);
+  });
+  firebase.auth().onAuthStateChanged((user) => {
+    if (user) {
+      setAuthPill(true, "conectado");
+      loadFlightsList();
+    } else {
+      setAuthPill(false, "desconectado");
+    }
+  });
+}
+
+boot();
+</script>
+</body>
+</html>

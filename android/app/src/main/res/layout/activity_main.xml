@@ -34,6 +34,28 @@
         android:layout_height="wrap_content"
         android:text="Iniciar envio" />
 
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginTop="14dp"
+        android:background="#33000000" />
+
+    <Switch
+        android:id="@+id/swCloud"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:text="Enviar para a nuvem (Firebase)" />
+
+    <TextView
+        android:id="@+id/txtCloudStatus"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:textSize="12sp"
+        android:textColor="#666666"
+        android:text="Nuvem desligada" />
+
     <ScrollView
         android:layout_width="match_parent"
         android:layout_height="match_parent"

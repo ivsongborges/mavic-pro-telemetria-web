@@ -6,3 +6,11 @@ local.properties
 captures/
 logs/
 __pycache__/
+
+# Firebase: credenciais/config real do projeto (use os arquivos .example.* como modelo)
+android/app/google-services.json
+firebase/.firebaserc
+firebase/public/firebase-config.js
+firebase/.firebase/
+firebase-debug.log
+firebase/node_modules/

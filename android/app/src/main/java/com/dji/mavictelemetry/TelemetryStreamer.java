@@ -54,12 +54,16 @@ public class TelemetryStreamer {
     private final Object lock = new Object();
     private final JSONObject snap = new JSONObject();
     private volatile Listener listener;
+    private volatile Listener cloudListener;
 
-    private ScheduledExecutorService scheduler;
+    // O loop de amostragem roda continuamente (criado uma vez, nunca parado); o envio UDP
+    // é só um dos destinos possíveis de cada amostra — a nuvem (cloudListener) é outro,
+    // e funciona mesmo com o UDP local desligado.
+    private final ScheduledExecutorService scheduler;
     private DatagramSocket socket;
     private InetAddress target;
     private int port;
-    private volatile boolean sending;
+    private volatile boolean udpEnabled;
     private volatile FlightController flightController;
     private volatile Battery battery;
     private int tick;
@@ -78,11 +82,18 @@ public class TelemetryStreamer {
 
     public TelemetryStreamer(Context context) {
         this.context = context.getApplicationContext();
+        scheduler = Executors.newSingleThreadScheduledExecutor();
+        scheduler.scheduleAtFixedRate(this::sendTick, 500, 1000 / SEND_HZ, TimeUnit.MILLISECONDS);
     }
 
     /** A Activity pode ser recriada; o streamer sobrevive e só troca o ouvinte da UI. */
     public void setListener(Listener l) {
         this.listener = l;
+    }
+
+    /** Ouvinte fixo do processo (CloudUploader, ver MApplication); recebe toda amostra a 10 Hz. */
+    public void setCloudListener(Listener l) {
+        this.cloudListener = l;
     }
 
     private void error(String msg) {
@@ -152,9 +163,8 @@ public class TelemetryStreamer {
         battery = null;
     }
 
-    public synchronized void start(String host, int udpPort) {
-        stop();
-        scheduler = Executors.newSingleThreadScheduledExecutor();
+    public synchronized void startLocalUdp(String host, int udpPort) {
+        stopLocalUdp();
         // Resolve DNS/abre socket fora da main thread (NetworkOnMainThreadException).
         scheduler.execute(() -> {
             try {
@@ -163,12 +173,11 @@ public class TelemetryStreamer {
                 bindToWifi = true;
                 fallbackTried = false;
                 openSocket();
-                sending = true;
+                udpEnabled = true;
             } catch (Exception e) {
                 error("Falha ao abrir UDP: " + e.getMessage());
             }
         });
-        scheduler.scheduleAtFixedRate(this::sendTick, 500, 1000 / SEND_HZ, TimeUnit.MILLISECONDS);
         registerNetworkWatcher();
     }
 
@@ -209,10 +218,9 @@ public class TelemetryStreamer {
     }
 
     private void reopenAsync() {
-        ScheduledExecutorService sch = scheduler;
-        if (sch == null || !sending) return;
+        if (!udpEnabled) return;
         try {
-            sch.execute(() -> {
+            scheduler.execute(() -> {
                 try {
                     openSocket();
                     error("Wi-Fi conectado: socket reaberto");
@@ -244,26 +252,20 @@ public class TelemetryStreamer {
         socket = sk;
     }
 
-    public synchronized void stop() {
-        sending = false;
+    public synchronized void stopLocalUdp() {
+        udpEnabled = false;
         unregisterNetworkWatcher();
-        if (scheduler != null) {
-            scheduler.shutdownNow();
-            scheduler = null;
-        }
-        if (socket != null) {
-            socket.close();
-            socket = null;
-        }
-    }
-
-    public boolean isSending() {
-        return sending;
-    }
-
-    private void sendTick() {
         DatagramSocket sk = socket;
-        if (!sending || sk == null || sk.isClosed()) return;
+        socket = null;
+        if (sk != null) sk.close();
+    }
+
+    public boolean isSendingUdp() {
+        return udpEnabled;
+    }
+
+    /** Roda sempre (independente do UDP): monta a amostra e avisa quem estiver ouvindo. */
+    private void sendTick() {
         if (tick++ % SEND_HZ == 0) pollSlowData();
         String json;
         synchronized (lock) {
@@ -271,15 +273,23 @@ public class TelemetryStreamer {
             put("seq", seq++);
             json = snap.toString();
         }
+        if (udpEnabled) sendUdp(json);
+        Listener l = listener;
+        if (l != null) l.onSnapshot(json);
+        Listener cl = cloudListener;
+        if (cl != null) cl.onSnapshot(json);
+    }
+
+    private void sendUdp(String json) {
+        DatagramSocket sk = socket;
+        if (sk == null || sk.isClosed()) return;
         try {
             byte[] data = (json + "\n").getBytes(StandardCharsets.UTF_8);
             sk.send(new DatagramPacket(data, data.length, target, port));
             sentOk++;
-            Listener l = listener;
-            if (l != null) l.onSnapshot(json);
         } catch (Exception e) {
-            // Envio em andamento durante stop(): não é erro.
-            if (!sending || sk.isClosed()) return;
+            // Envio em andamento durante stopLocalUdp(): não é erro.
+            if (!udpEnabled || sk.isClosed()) return;
             sendErrors++;
             lastError = String.valueOf(e.getMessage());
             Log.w(TAG, "send failed", e);

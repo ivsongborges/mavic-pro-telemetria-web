@@ -1,0 +1,12 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+
+    "flights": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      ".indexOn": ["meta/startedAt"]
+    }
+  }
+}

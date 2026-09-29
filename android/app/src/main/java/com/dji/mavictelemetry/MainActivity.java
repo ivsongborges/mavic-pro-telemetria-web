@@ -11,9 +11,15 @@ import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
 import android.widget.Button;
+import android.widget.CompoundButton;
 import android.widget.EditText;
+import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
+
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Locale;
 
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
@@ -42,10 +48,20 @@ public class MainActivity extends AppCompatActivity implements TelemetryStreamer
     private TelemetryStreamer streamer;
     private BaseProduct currentProduct;
 
-    private TextView txtStatus, txtTelemetry;
+    private TextView txtStatus, txtTelemetry, txtCloudStatus;
     private EditText edtHost, edtPort;
     private Button btnToggle;
+    private Switch swCloud;
     private SharedPreferences prefs;
+    private CloudUploader cloudUploader;
+    private final android.os.Handler cloudStatusHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+    private final Runnable cloudStatusTick = new Runnable() {
+        @Override
+        public void run() {
+            txtCloudStatus.setText(cloudUploader.getStatus());
+            cloudStatusHandler.postDelayed(this, 1000);
+        }
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -54,9 +70,11 @@ public class MainActivity extends AppCompatActivity implements TelemetryStreamer
 
         txtStatus = findViewById(R.id.txtStatus);
         txtTelemetry = findViewById(R.id.txtTelemetry);
+        txtCloudStatus = findViewById(R.id.txtCloudStatus);
         edtHost = findViewById(R.id.edtHost);
         edtPort = findViewById(R.id.edtPort);
         btnToggle = findViewById(R.id.btnToggle);
+        swCloud = findViewById(R.id.swCloud);
 
         prefs = getSharedPreferences("cfg", MODE_PRIVATE);
         edtHost.setText(prefs.getString("host", ""));
@@ -64,8 +82,12 @@ public class MainActivity extends AppCompatActivity implements TelemetryStreamer
 
         streamer = MApplication.streamer(this);
         streamer.setListener(this);
-        if (streamer.isSending()) btnToggle.setText("Parar envio");
+        if (streamer.isSendingUdp()) btnToggle.setText("Parar envio");
         btnToggle.setOnClickListener(v -> toggleStreaming());
+
+        cloudUploader = MApplication.cloudUploader(this);
+        swCloud.setChecked(cloudUploader.isEnabled());
+        swCloud.setOnCheckedChangeListener(this::onCloudToggled);
 
         requestPermissionsThenRegister();
     }
@@ -74,7 +96,14 @@ public class MainActivity extends AppCompatActivity implements TelemetryStreamer
     protected void onResume() {
         super.onResume();
         // O envio pode ter sido parado pela notificação.
-        btnToggle.setText(streamer.isSending() ? "Parar envio" : "Iniciar envio");
+        btnToggle.setText(streamer.isSendingUdp() ? "Parar envio" : "Iniciar envio");
+        cloudStatusHandler.post(cloudStatusTick);
+    }
+
+    @Override
+    protected void onPause() {
+        cloudStatusHandler.removeCallbacks(cloudStatusTick);
+        super.onPause();
     }
 
     @Override
@@ -97,10 +126,10 @@ public class MainActivity extends AppCompatActivity implements TelemetryStreamer
     }
 
     private void toggleStreaming() {
-        if (streamer.isSending()) {
-            streamer.stop();
-            stopService(new Intent(this, TelemetryService.class));
+        if (streamer.isSendingUdp()) {
+            streamer.stopLocalUdp();
             btnToggle.setText("Iniciar envio");
+            updateForegroundService();
             return;
         }
         String host = edtHost.getText().toString().trim();
@@ -116,10 +145,30 @@ public class MainActivity extends AppCompatActivity implements TelemetryStreamer
             return;
         }
         prefs.edit().putString("host", host).putString("port", String.valueOf(port)).apply();
-        streamer.start(host, port);
-        ContextCompat.startForegroundService(this, new Intent(this, TelemetryService.class));
-        requestBatteryExemption();
+        streamer.startLocalUdp(host, port);
         btnToggle.setText("Parar envio");
+        updateForegroundService();
+    }
+
+    private void onCloudToggled(CompoundButton btn, boolean checked) {
+        if (checked) {
+            String flightId = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(new Date());
+            cloudUploader.setEnabled(true, flightId);
+        } else {
+            cloudUploader.setEnabled(false, null);
+        }
+        txtCloudStatus.setText(cloudUploader.getStatus());
+        updateForegroundService();
+    }
+
+    /** O serviço em primeiro plano (wake lock/Wi-Fi lock) fica ativo enquanto UDP local OU nuvem estiverem ligados. */
+    private void updateForegroundService() {
+        if (streamer.isSendingUdp() || cloudUploader.isEnabled()) {
+            ContextCompat.startForegroundService(this, new Intent(this, TelemetryService.class));
+            requestBatteryExemption();
+        } else {
+            stopService(new Intent(this, TelemetryService.class));
+        }
     }
 
     // ---- permissões / registro do SDK ----

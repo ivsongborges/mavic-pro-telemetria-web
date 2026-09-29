@@ -11,6 +11,15 @@ if (localFile.exists()) {
 }
 def djiAppKey = localProps.getProperty('DJI_APP_KEY', '')
 
+// Envio para o Firebase (nuvem) é opcional: só ativa se você colocar o arquivo
+// google-services.json (baixado do Firebase Console) nesta pasta (android/app/). Veja
+// firebase/README.md. Sem o arquivo, o app compila normalmente e o switch de nuvem
+// mostra "Firebase não configurado".
+def hasGoogleServices = file('google-services.json').exists()
+if (hasGoogleServices) {
+    apply plugin: 'com.google.gms.google-services'
+}
+
 android {
     namespace 'com.dji.mavictelemetry'
     compileSdkVersion 31
@@ -64,4 +73,9 @@ dependencies {
         exclude module: 'fly-safe-database'
     })
     compileOnly 'com.dji:dji-sdk-provided:4.16.4'
+
+    // Firebase (nuvem). O BoM fixa versões compatíveis entre si.
+    implementation platform('com.google.firebase:firebase-bom:33.1.2')
+    implementation 'com.google.firebase:firebase-database'
+    implementation 'com.google.firebase:firebase-auth'
 }

@@ -1,20 +1,37 @@
 # Mavic Pro — Telemetria em tempo real (DJI Mobile SDK V4)
 
+O projeto tem duas partes independentes, que **não precisam ser usadas juntas**:
+
 ```
-Mavic Pro ──rádio──> Controle remoto ──USB──> Celular Android (app) ──Wi-Fi/UDP──> PC (receiver.py)
+                                          ┌──Wi-Fi/UDP (mesma rede)──> PC local (receiver/, veja abaixo)
+Mavic Pro ──rádio──> RC ──USB──> Celular (android/) ─┤
+                                          └──HTTPS/internet──────────> Firebase (firebase/, veja abaixo)
 ```
 
 O Mavic Pro (original) **só é suportado pelo Mobile SDK V4**; o MSDK V5 não o suporta.
 O SDK V4 roda no Android/iOS, então o celular conectado ao controle remoto por USB é a ponte:
-o app lê os estados do drone e os envia como JSON via UDP (10 Hz) para o PC.
+o app lê os estados do drone a 10 Hz e pode enviá-los por dois caminhos, ao mesmo tempo ou
+só um deles:
+
+1. **`android/` + `receiver/`** — envio local por UDP para um script Python no PC, na mesma
+   rede Wi-Fi. Sem depender de internet além do 1º registro do SDK. Ver seção
+   [Envio local (UDP)](#envio-local-udp) abaixo.
+2. **`android/` + `firebase/`** — envio por HTTPS para o Firebase (Realtime Database),
+   com um dashboard hospedado na nuvem, acessível de qualquer lugar. Ver
+   [`firebase/README.md`](firebase/README.md).
 
 ## Estrutura
-- `android/` — app Android (Java, SDK 4.16.4): registra o SDK e transmite telemetria.
+- `android/` — app Android (Java, SDK 4.16.4): registra o SDK, lê a telemetria e envia por UDP
+  local e/ou para o Firebase (opcional).
 - `receiver/receiver.py` — receptor UDP no PC; mostra no terminal, grava `.jsonl` + `.csv` em `logs/` e serve o dashboard.
 - `receiver/webserver.py` + `receiver/web/index.html` — servidor HTTP/SSE e a página do dashboard (mapa, instrumentos).
 - `tools/simulate.py` — simulador de voo para testar o dashboard sem o drone.
+- `firebase/` — configuração do Firebase Hosting + Realtime Database: dashboard web na nuvem,
+  alternativa ao `receiver/` que não depende do PC estar ligado nem na mesma rede. Opcional —
+  veja [`firebase/README.md`](firebase/README.md) para o passo a passo completo.
 
-## Requisitos
+## Envio local (UDP)
+### Requisitos
 - Android Studio (Hedgehog ou mais novo) e JDK 11+ (o Android Studio já traz).
 - Celular Android 5.0+ (API 21), com cabo USB do controle remoto (Lightning/micro-USB/USB-C, conforme o RC).
 - Conta em <https://developer.dji.com> → *Apps* → *Create App*:
@@ -22,7 +39,7 @@ o app lê os estados do drone e os envia como JSON via UDP (10 Hz) para o PC.
   - Copie o **App Key**.
 - Python 3.8+ no PC (sem dependências).
 
-## Passo a passo
+### Passo a passo
 1. Crie `android/local.properties` (além do `sdk.dir` que o Android Studio gera):
    ```
    DJI_APP_KEY=seu_app_key_aqui
@@ -38,8 +55,11 @@ o app lê os estados do drone e os envia como JSON via UDP (10 Hz) para o PC.
 6. No app: informe o IP do PC e a porta, toque em **Iniciar envio**.
 
 > O cabo USB ocupa a porta do celular; use Wi-Fi (ou hotspot do PC) para o envio. Não é necessário o app oficial DJI GO 4 — feche-o para não disputar a conexão.
+>
+> O app também tem um interruptor **"Enviar para a nuvem (Firebase)"**, independente deste envio
+> local — os dois podem ficar ligados ao mesmo tempo. Ver [`firebase/README.md`](firebase/README.md).
 
-## Dashboard web e mapa
+### Dashboard web e mapa
 Ao rodar o `receiver.py`, ele também serve um dashboard em **<http://localhost:8080>** (só biblioteca padrão do Python).
 - **Mapa** (OpenStreetMap, com alternância para satélite Esri): posição do drone em tempo real, ícone girando com o rumo,
   trilha do voo, ponto de decolagem (H), "Seguir drone", "Centralizar" e "Limpar trilha".
@@ -65,12 +85,14 @@ O receptor só cria os arquivos de log quando chega o primeiro pacote, então ab
 
 **Testar sem o drone:** em outro terminal, `python tools/simulate.py` simula um voo circular e alimenta o dashboard.
 
-## Onde ficam os logs
+### Onde ficam os logs
 Por padrão em `<projeto>/logs/` (ex.: `C:\Code\mavic-telemetry\logs\telemetry_AAAAMMDD_HHMMSS.csv` e `.jsonl`),
 não importa de onde o comando é executado. Para outra pasta: `--out C:\Dados\voos`.
 O `.jsonl` guarda tudo o que chegou; o `.csv` tem as colunas fixas de `FIELDS` em `receiver.py`.
 
-## Campos enviados (JSON, 1 objeto por datagrama, 10 Hz)
+## Campos enviados
+Mesmos campos nos dois caminhos (JSON). No UDP local, 1 objeto por datagrama a 10 Hz; na nuvem
+(Firebase), por padrão ~1 objeto/s (ver [`firebase/README.md`](firebase/README.md#custos)).
 | Grupo | Campos |
 |---|---|
 | Tempo | `ts` (ms epoch) |
@@ -91,5 +113,7 @@ Para adicionar campos, edite `TelemetryStreamer.java` (callbacks) e `FIELDS` em 
 ## Problemas comuns
 - **Registro falha**: package name diferente do cadastrado, App Key errado em `local.properties`, ou sem internet.
 - **Produto não conecta**: cabo USB só de carga, RC desligado, ou DJI GO 4 aberto.
-- **Sem dados no PC**: IP errado, redes diferentes, ou firewall bloqueando UDP.
-- Este código não foi compilado/testado com hardware; se o Gradle reclamar de versão do AGP/JDK, ajuste `android/build.gradle`.
+- **Sem dados no PC**: IP errado, redes diferentes, firewall bloqueando UDP, ou o app em segundo
+  plano sendo limitado pelo Android — veja a exceção de otimização de bateria pedida pelo app.
+- **Nuvem**: veja a seção "Problemas comuns" em [`firebase/README.md`](firebase/README.md).
+- Se o Gradle reclamar de versão do AGP/JDK, ajuste `android/build.gradle`.

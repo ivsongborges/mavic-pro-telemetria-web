@@ -42,7 +42,8 @@ public class TelemetryService extends Service {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent != null && ACTION_STOP.equals(intent.getAction())) {
-            MApplication.streamer(this).stop();
+            MApplication.streamer(this).stopLocalUdp();
+            MApplication.cloudUploader(this).setEnabled(false, null);
             stopForeground(true);
             stopSelf();
             return START_NOT_STICKY;
@@ -66,9 +67,11 @@ public class TelemetryService extends Service {
         PendingIntent stop = PendingIntent.getService(this, 1,
                 new Intent(this, TelemetryService.class).setAction(ACTION_STOP), immutable);
 
+        String text = statusText();
         return new NotificationCompat.Builder(this, CHANNEL_ID)
                 .setContentTitle("Mavic Telemetry")
-                .setContentText(statusText())
+                .setContentText(text)
+                .setStyle(new NotificationCompat.BigTextStyle().bigText(text))
                 .setOnlyAlertOnce(true)
                 .setSmallIcon(android.R.drawable.stat_sys_upload)
                 .setOngoing(true)
@@ -79,8 +82,10 @@ public class TelemetryService extends Service {
 
     private String statusText() {
         TelemetryStreamer st = MApplication.streamer(this);
-        String t = "Enviados: " + st.getSentOk() + " | falhas: " + st.getSendErrors();
+        CloudUploader cu = MApplication.cloudUploader(this);
+        String t = "Local: " + st.getSentOk() + " enviados, " + st.getSendErrors() + " falhas";
         if (st.getSendErrors() > 0) t += " (" + st.getLastError() + ")";
+        t += "\nNuvem: " + cu.getStatus();
         return t;
     }
 
