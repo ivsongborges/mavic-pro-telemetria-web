@@ -128,6 +128,11 @@ Para adicionar campos, edite `TelemetryStreamer.java` (callbacks) e `FIELDS` em 
   abra o Mavic Telemetry primeiro. Para confirmar qual app pegou a conexão, com o celular ligado ao
   PC por `adb`: `adb logcat -d | grep -i USB_ACCESSORY_ATTACHED` mostra o `cmp=` (componente) que
   foi aberto.
+- **Quero voar com o DJI GO4/Litchi e ainda assim ver a telemetria**: dá para **alternar** entre os
+  apps (um de cada vez, sem forçar parada) — o DJI GO4/Litchi soltam a conexão USB do RC ao ir para
+  segundo plano. Ao voltar para o Mavic Telemetry, ele tenta reconectar sozinho; se não pegar (varia
+  um pouco de aparelho), toque no botão **Reconectar** ao lado do status. Não dá para os dois terem
+  a conexão *ao mesmo tempo, na tela ao mesmo tempo* — isso é uma trava do Android, não do app.
 - **Produto não conecta** (outras causas): cabo USB só de carga, ou RC desligado/despareado do drone.
 - **Sem dados no PC**: IP errado, redes diferentes, firewall bloqueando UDP, ou o app em segundo
   plano sendo limitado pelo Android — veja a exceção de otimização de bateria pedida pelo app.
