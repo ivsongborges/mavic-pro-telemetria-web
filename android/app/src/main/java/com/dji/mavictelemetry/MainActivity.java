@@ -45,13 +45,12 @@ public class MainActivity extends AppCompatActivity implements TelemetryStreamer
     };
 
     private static final AtomicBoolean registering = new AtomicBoolean(false);
-    private static volatile boolean sdkReady; // true depois que registerApp() teve sucesso
     private TelemetryStreamer streamer;
     private BaseProduct currentProduct;
 
     private TextView txtStatus, txtTelemetry, txtCloudStatus;
     private EditText edtHost, edtPort;
-    private Button btnToggle, btnReconnect;
+    private Button btnToggle;
     private Switch swCloud;
     private SharedPreferences prefs;
     private CloudUploader cloudUploader;
@@ -75,9 +74,7 @@ public class MainActivity extends AppCompatActivity implements TelemetryStreamer
         edtHost = findViewById(R.id.edtHost);
         edtPort = findViewById(R.id.edtPort);
         btnToggle = findViewById(R.id.btnToggle);
-        btnReconnect = findViewById(R.id.btnReconnect);
         swCloud = findViewById(R.id.swCloud);
-        btnReconnect.setOnClickListener(v -> reconnectProduct());
 
         prefs = getSharedPreferences("cfg", MODE_PRIVATE);
         edtHost.setText(prefs.getString("host", ""));
@@ -101,12 +98,6 @@ public class MainActivity extends AppCompatActivity implements TelemetryStreamer
         // O envio pode ter sido parado pela notificação.
         btnToggle.setText(streamer.isSendingUdp() ? "Parar envio" : "Iniciar envio");
         cloudStatusHandler.post(cloudStatusTick);
-        // Se você alternou para o DJI GO4/Litchi e voltou: eles costumam soltar a conexão USB do RC
-        // ao ir para segundo plano, mas nós só tentávamos pegá-la uma vez, na 1ª abertura do app.
-        // Tenta de novo toda vez que a tela volta a aparecer, caso o produto ainda não esteja conectado.
-        if (sdkReady && currentProduct == null) {
-            DJISDKManager.getInstance().startConnectionToProduct();
-        }
     }
 
     @Override
@@ -120,17 +111,6 @@ public class MainActivity extends AppCompatActivity implements TelemetryStreamer
         streamer.setListener(null);
         // O envio continua em segundo plano (TelemetryService); só o botão/notificação o param.
         super.onDestroy();
-    }
-
-    /** Botão "Reconectar": útil depois de usar o DJI GO4/Litchi (eles seguram a conexão USB do RC
-     *  enquanto abertos) e voltar para este app — tenta pegar a conexão de novo. */
-    private void reconnectProduct() {
-        if (!sdkReady) {
-            toast("SDK ainda não registrado");
-            return;
-        }
-        setStatus("Tentando conectar ao controle remoto...");
-        DJISDKManager.getInstance().startConnectionToProduct();
     }
 
     /** Sem isso, muitos celulares limitam a rede/CPU do app em segundo plano. */
@@ -224,7 +204,6 @@ public class MainActivity extends AppCompatActivity implements TelemetryStreamer
             @Override
             public void onRegister(DJIError error) {
                 if (error == DJISDKError.REGISTRATION_SUCCESS) {
-                    sdkReady = true;
                     setStatus("SDK registrado. Conecte o controle remoto por USB.");
                     DJISDKManager.getInstance().startConnectionToProduct();
                 } else {
