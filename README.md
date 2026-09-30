@@ -119,7 +119,16 @@ Para adicionar campos, edite `TelemetryStreamer.java` (callbacks) e `FIELDS` em 
   ficar mais novo). Para ver a causa de um crash: `adb logcat -d | grep -A 40 "FATAL EXCEPTION"`
   com o celular conectado por USB.
 - **Registro falha**: package name diferente do cadastrado, App Key errado em `local.properties`, ou sem internet.
-- **Produto não conecta**: cabo USB só de carga, RC desligado, ou DJI GO 4 aberto.
+- **Fica preso em "Conecte o controle remoto por USB" mesmo com o cabo plugado**: quase sempre é o
+  **DJI GO 4 instalado no celular** roubando a conexão — só um app pode segurar o acessório USB do
+  RC por vez, e os dois usam o mesmo filtro (`manufacturer="DJI" model="com.dji.sdk"`), então o
+  Android entrega para qualquer um dos dois que "ganhar". Fechar o DJI GO 4 pela tela de recentes
+  **não é suficiente** (o Android ainda consegue acordá-lo pela conexão USB); force-pare-o em
+  *Configurações → Apps → DJI GO 4 → Forçar parada* (ou desinstale) **antes** de conectar o cabo, e
+  abra o Mavic Telemetry primeiro. Para confirmar qual app pegou a conexão, com o celular ligado ao
+  PC por `adb`: `adb logcat -d | grep -i USB_ACCESSORY_ATTACHED` mostra o `cmp=` (componente) que
+  foi aberto.
+- **Produto não conecta** (outras causas): cabo USB só de carga, ou RC desligado/despareado do drone.
 - **Sem dados no PC**: IP errado, redes diferentes, firewall bloqueando UDP, ou o app em segundo
   plano sendo limitado pelo Android — veja a exceção de otimização de bateria pedida pelo app.
 - **Nuvem**: veja a seção "Problemas comuns" em [`firebase/README.md`](firebase/README.md).
