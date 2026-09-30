@@ -77,11 +77,16 @@
 
 <header>
   <h1>🚁 Mavic Telemetry</h1>
-  <span class="pill off" id="pillAuth"><span class="dot"></span><span id="authText">conectando à nuvem...</span></span>
+  <span class="pill off" id="pillAuth" title="Esta página com o Firebase — não diz se o celular está conectado. Veja o indicador 'voo' ao lado, ou o app no celular.">
+    <span class="dot"></span><span id="authText">conectando à nuvem...</span>
+  </span>
   <label class="msg" style="display:flex;align-items:center;gap:6px;">
     Voo:
     <select id="selFlight"><option>carregando…</option></select>
   </label>
+  <span class="pill off" id="pillFlightActive" title="Se o app perder a conexão sem avisar (bateria, fora de área, app fechado à força), o próprio Firebase marca o voo como encerrado em até ~1 min.">
+    <span class="dot"></span><span id="flightActiveText">--</span>
+  </span>
   <div class="modeToggle">
     <button id="btnModeLive" class="modeBtn active">Ao vivo</button>
     <button id="btnModeReplay" class="modeBtn">Replay</button>
@@ -369,7 +374,27 @@ document.addEventListener("keydown", (e) => {
 // ---- Firebase ----
 let db = null;
 let currentFlightId = null;
-let liveRef = null, logRef = null;
+let liveRef = null, logRef = null, metaRef = null;
+
+// "active"/"endedAt" em meta: o app grava ao ligar/desligar o envio, e o Firebase grava sozinho
+// (onDisconnect) se o celular cair sem avisar. Isto é ao vivo (.on, não .once) para o pill
+// virar "encerrado" na hora, mesmo sem recarregar a página.
+function setFlightActivePill(meta) {
+  const pill = $("pillFlightActive"), text = $("flightActiveText");
+  pill.classList.remove("live", "off");
+  if (meta.active === true) {
+    pill.classList.add("live");
+    text.textContent = "voo em andamento";
+  } else if (meta.active === false) {
+    pill.classList.add("off");
+    text.textContent = meta.endedAt
+      ? `encerrado ${new Date(meta.endedAt).toLocaleTimeString("pt-BR")}`
+      : "voo encerrado";
+  } else {
+    pill.classList.add("off");
+    text.textContent = "--"; // voo antigo, gravado antes desse indicador existir
+  }
+}
 
 function setAuthPill(ok, text) {
   const pill = $("pillAuth");
@@ -385,7 +410,7 @@ function loadFlightsList() {
     const entries = [];
     snap.forEach((child) => {
       const meta = child.val().meta || {};
-      entries.push({ id: child.key, startedAt: meta.startedAt || 0, device: meta.device || "?" });
+      entries.push({ id: child.key, startedAt: meta.startedAt || 0, device: meta.device || "?", active: meta.active === true });
     });
     entries.sort((a, b) => b.startedAt - a.startedAt);
     if (entries.length === 0) {
@@ -396,7 +421,7 @@ function loadFlightsList() {
       const opt = document.createElement("option");
       opt.value = e.id;
       const when = e.startedAt ? new Date(e.startedAt).toLocaleString("pt-BR") : e.id;
-      opt.textContent = `${when} — ${e.device}`;
+      opt.textContent = `${e.active ? "🟢 " : ""}${when} — ${e.device}`;
       sel.appendChild(opt);
     }
     sel.value = entries[0].id;
@@ -408,16 +433,19 @@ function selectFlight(flightId) {
   currentFlightId = flightId;
   if (liveRef) liveRef.off();
   if (logRef) logRef.off();
+  if (metaRef) metaRef.off();
   if (mode === "live") {
     trail.setLatLngs([]);
     marker = null;
   }
 
   const base = db.ref("flights").child(flightId);
-  base.child("meta").once("value", (snap) => {
+  metaRef = base.child("meta");
+  metaRef.on("value", (snap) => {
     const meta = snap.val() || {};
     $("vFlightStart").textContent = meta.startedAt ? new Date(meta.startedAt).toLocaleString("pt-BR") : "--";
     $("vDevice").textContent = meta.device || "--";
+    setFlightActivePill(meta);
   });
   base.child("log").once("value", (snap) => {
     $("vLogCount").textContent = snap.numChildren();
@@ -475,7 +503,7 @@ function boot() {
   });
   firebase.auth().onAuthStateChanged((user) => {
     if (user) {
-      setAuthPill(true, "conectado");
+      setAuthPill(true, "painel conectado");
       loadFlightsList();
     } else {
       setAuthPill(false, "desconectado");

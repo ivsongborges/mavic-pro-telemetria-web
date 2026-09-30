@@ -72,18 +72,36 @@ aparece no terminal, algo como `https://SEU-PROJETO.web.app`.
    Realtime Database (mesmo `log/` usado pelo Exportar CSV) — não precisa do celular conectado.
    Volte com **Ao vivo**.
 
-> "Conectado" (verde, sempre) é a página falando com o Firebase; "ao vivo" / "sem dados há Xs"
-> é se chegou telemetria recentemente. São coisas independentes — ao desligar o envio no app,
-> o normal é continuar "conectado" e passar a mostrar "sem dados há Xs" crescendo. Use o Replay
-> para rever o voo que acabou de terminar.
+## Como saber se o celular está conectado / se o voo já terminou
+O dashboard tem três indicadores, cada um dizendo uma coisa diferente:
+
+| Indicador | O que significa |
+|---|---|
+| **"painel conectado"** (verde, quase sempre) | Esta *página* está logada no Firebase. Não diz nada sobre o celular. |
+| **"voo em andamento" / "encerrado HH:MM:SS"** | Vem de `meta/active` do voo selecionado. É o que responde "a missão já acabou?". |
+| **"ao vivo" / "sem dados há Xs"** | Chegou telemetria nos últimos 5 s. Some/desatualiza rápido, inclusive em pequenas falhas de rede. |
+
+**"voo em andamento"** vira **"encerrado"** sozinho, sem precisar recarregar a página, em dois casos:
+- o interruptor "Enviar para a nuvem" foi desligado no app (encerramento de propósito); ou
+- o celular perdeu a conexão sem avisar — bateria acabou, saiu da área de cobertura, app foi
+  fechado à força. Nesse caso é o **próprio servidor do Firebase** que detecta a queda e grava
+  `active: false` (recurso `onDisconnect`), tipicamente em até ~1 minuto — não depende do celular
+  conseguir escrever mais nada.
+
+**No próprio celular**, para saber se o app está conectado: o texto abaixo do interruptor de nuvem
+na tela do app, e a notificação persistente (linha "Nuvem: ..."), mostram o status em tempo real —
+"Conectando à nuvem...", "Nuvem ativa (voo ...)", "Nuvem desligada", ou o motivo de uma falha.
 
 ## Modelo de dados (Realtime Database)
 ```
-/flights/{flightId}/meta/{startedAt, device}
+/flights/{flightId}/meta/{startedAt, device, active, endedAt}
 /flights/{flightId}/live/{...último snapshot...}
 /flights/{flightId}/log/{pushId}/{...snapshot no momento...}
 ```
 `flightId` é gerado pelo app (`yyyyMMdd_HHmmss`) toda vez que você liga o interruptor de nuvem.
+`active`/`endedAt` são escritos ao ligar (`active: true`), ao desligar de propósito
+(`active: false` + `endedAt`), e automaticamente pelo servidor via `onDisconnect` se a conexão
+cair sem avisar. Voos gravados antes dessa funcionalidade existir não têm esses dois campos.
 
 ## Regras de segurança
 `database.rules.json` exige `auth != null` para ler ou escrever em `/flights`. Qualquer pessoa com o

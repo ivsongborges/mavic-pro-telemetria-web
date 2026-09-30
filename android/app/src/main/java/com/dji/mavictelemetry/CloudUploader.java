@@ -8,6 +8,7 @@ import com.google.firebase.FirebaseApp;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
+import com.google.firebase.database.ServerValue;
 
 import org.json.JSONObject;
 
@@ -37,6 +38,7 @@ public class CloudUploader implements TelemetryStreamer.Listener {
     private volatile String flightId;
     private volatile String status = "Nuvem desligada";
     private volatile DatabaseReference flightRef;
+    private volatile DatabaseReference metaRef;
     private boolean signingIn;
 
     public CloudUploader(Context context) {
@@ -74,7 +76,18 @@ public class CloudUploader implements TelemetryStreamer.Listener {
         if (!on) {
             enabled = false;
             status = "Nuvem desligada";
+            // Marca o voo como encerrado "de propósito" (o dashboard mostra isso em tempo real)
+            // e cancela o onDisconnect — não é mais uma queda inesperada, já estamos parando.
+            DatabaseReference mr = metaRef;
+            if (mr != null) {
+                Map<String, Object> end = new HashMap<>();
+                end.put("active", false);
+                end.put("endedAt", ServerValue.TIMESTAMP);
+                mr.updateChildren(end);
+                mr.onDisconnect().cancel();
+            }
             flightRef = null;
+            metaRef = null;
             return;
         }
         if (!isConfigured()) {
@@ -125,10 +138,20 @@ public class CloudUploader implements TelemetryStreamer.Listener {
         status = "Nuvem ativa (voo " + flightId + ")";
         DatabaseReference ref = flightRef;
         if (ref == null) return;
+        DatabaseReference mr = ref.child("meta");
+        metaRef = mr;
         Map<String, Object> meta = new HashMap<>();
-        meta.put("startedAt", System.currentTimeMillis());
+        meta.put("startedAt", ServerValue.TIMESTAMP);
         meta.put("device", Build.MANUFACTURER + " " + Build.MODEL);
-        ref.child("meta").updateChildren(meta);
+        meta.put("active", true);
+        mr.updateChildren(meta);
+        // Rede de segurança: se o app cair, a bateria acabar ou o celular sair de área sem dar
+        // tempo de avisar, o PRÓPRIO SERVIDOR do Firebase marca o voo como encerrado sozinho,
+        // assim que perceber que a conexão caiu — não depende do celular conseguir escrever nada.
+        Map<String, Object> onDisconnect = new HashMap<>();
+        onDisconnect.put("active", false);
+        onDisconnect.put("endedAt", ServerValue.TIMESTAMP);
+        mr.onDisconnect().updateChildren(onDisconnect);
     }
 
     @Override
