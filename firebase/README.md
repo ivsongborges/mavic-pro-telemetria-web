@@ -63,14 +63,30 @@ aparece no terminal, algo como `https://SEU-PROJETO.web.app`.
 ## 4. Usar
 1. No app Android, ative o interruptor **"Enviar para a nuvem (Firebase)"**. O status abaixo dele mostra
    se conectou.
-2. Abra a URL do Hosting: o dropdown **Voo** lista as sessões enviadas (mais recente primeiro),
-   com posição, bateria e estado de voo ao vivo no mapa e nos painéis.
+2. Abra a URL do Hosting: o dropdown **Voo** lista as sessões enviadas (mais recente primeiro, com 🟢
+   nos voos em andamento).
 3. **Exportar CSV** baixa o histórico do voo selecionado.
 4. **Replay**: alterne para o modo **Replay** no cabeçalho para reproduzir qualquer voo já gravado
-   — barra de progresso (arraste para pular), play/pause, ±5 s, velocidade de 0,5× a 30×, o
-   caminho completo tracejado no mapa e a trilha já percorrida. Os dados vêm do que já está no
-   Realtime Database (mesmo `log/` usado pelo Exportar CSV) — não precisa do celular conectado.
-   Volte com **Ao vivo**.
+   — barra de progresso (arraste ou clique nos gráficos para pular), play/pause, ±5 s, velocidade
+   de 0,5× a 30×, o caminho completo tracejado no mapa e a trilha já percorrida. Os dados vêm do
+   que já está no Realtime Database (mesmo `log/` usado pelo Exportar CSV) — não precisa do celular
+   conectado. Volte com **Ao vivo**.
+
+## Painéis (paridade com o dashboard local)
+O dashboard mostra os mesmos instrumentos que `receiver/web/index.html` (dashboard local, usado com
+o envio UDP): mapa com camada de satélite e ícone do drone girando com o rumo, ponto de decolagem
+(H), horizonte artificial e bússola, bateria completa (tensão, corrente, potência, temperatura,
+mAh, ciclos, vida útil, tensão de cada célula e desbalanço), link de rádio (uplink/downlink) e
+sticks do controle remoto, distância mínima dos 4 sensores de obstáculo, alertas (bateria
+crítica/baixa, IMU aquecendo, erro de bússola, altura/raio máximo, retorno à base, vento),
+gráficos de altitude/velocidade/bateria e uma tabela com todos os campos recebidos.
+
+Duas diferenças, pela natureza da nuvem em vez de UDP direto:
+- **Taxa de atualização**: os painéis atualizam ao ritmo do que o app envia para a nuvem (~1/s por
+  padrão), não os 10/s do UDP local — os gráficos e o replay refletem isso.
+- **"Atualizações"/"Taxa"** no cabeçalho substituem "Pacotes"/"Perdidos" do dashboard local: o
+  Firebase entrega os dados de forma confiável e ordenada (sem "pacote perdido" como no UDP), então
+  esse conceito não se aplica aqui.
 
 ## Como saber se o celular está conectado / se o voo já terminou
 O dashboard tem três indicadores, cada um dizendo uma coisa diferente:
