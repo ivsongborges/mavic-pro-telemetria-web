@@ -32,7 +32,11 @@ android {
         // O SDK do Firebase exige minSdkVersion >= 23 (o merge do AndroidManifest falha com 21;
         // veja firebase/README.md). Isso deixa de fora só Android 5.0/5.1 (Lollipop).
         minSdkVersion 23
-        targetSdkVersion 34
+        // Fica em 30 (não em compileSdk): o SDK V4 da DJI (2022) registra um BroadcastReceiver
+        // do jeito antigo, sem RECEIVER_EXPORTED/RECEIVER_NOT_EXPORTED — o Android só exige isso
+        // quando o targetSdkVersion do app é 33+, e aí o app crasha ao registrar o SDK. Ver
+        // "Problemas comuns" no README.
+        targetSdkVersion 30
         versionCode 1
         versionName "1.0"
         multiDexEnabled true

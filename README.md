@@ -112,6 +112,12 @@ Campos que o drone/RC não reportar ficam vazios no CSV. **Rotação dos motores
 Para adicionar campos, edite `TelemetryStreamer.java` (callbacks) e `FIELDS` em `receiver.py`.
 
 ## Problemas comuns
+- **App fecha sozinho ao abrir**: se `targetSdkVersion` em `android/app/build.gradle` estiver 33+,
+  o SDK V4 da DJI (2022) crasha ao registrar (`SecurityException: RECEIVER_EXPORTED ...`) — ele
+  registra um `BroadcastReceiver` do jeito antigo, e o Android exige a flag explícita a partir do
+  target 33. Mantenha `targetSdkVersion 30` (não precisa ser igual ao `compileSdkVersion`, que pode
+  ficar mais novo). Para ver a causa de um crash: `adb logcat -d | grep -A 40 "FATAL EXCEPTION"`
+  com o celular conectado por USB.
 - **Registro falha**: package name diferente do cadastrado, App Key errado em `local.properties`, ou sem internet.
 - **Produto não conecta**: cabo USB só de carga, RC desligado, ou DJI GO 4 aberto.
 - **Sem dados no PC**: IP errado, redes diferentes, firewall bloqueando UDP, ou o app em segundo
