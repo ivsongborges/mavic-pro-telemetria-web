@@ -603,26 +603,63 @@
     } else { pill.classList.add('off'); text.textContent = '--'; }
   }
 
+  // Lista de voos: mantida em memória e re-renderizada a cada mudança (poucos itens, barato).
+  let flightEntries = [];       // [{id, startedAt, device, active}]
+  let autoFollowNewFlights = true; // segue o voo mais novo sozinho, até o usuário escolher outro voo manualmente
+
+  function upsertFlightEntry(id, meta) {
+    const entry = { id, startedAt: meta.startedAt || 0, device: meta.device || '?', active: meta.active === true };
+    const i = flightEntries.findIndex((e) => e.id === id);
+    if (i >= 0) flightEntries[i] = entry; else flightEntries.push(entry);
+  }
+
+  function newestFlightId() {
+    if (!flightEntries.length) return null;
+    return [...flightEntries].sort((a, b) => b.startedAt - a.startedAt)[0].id;
+  }
+
+  function renderFlightSelect(forceSelectId) {
+    const sel = $('selFlight');
+    const prev = sel.value;
+    sel.innerHTML = '';
+    if (!flightEntries.length) { sel.innerHTML = '<option>nenhum voo ainda</option>'; return; }
+    const sorted = [...flightEntries].sort((a, b) => b.startedAt - a.startedAt);
+    for (const e of sorted) {
+      const opt = document.createElement('option');
+      opt.value = e.id;
+      const when = e.startedAt ? new Date(e.startedAt).toLocaleString('pt-BR') : e.id;
+      opt.textContent = `${e.active ? '🟢 ' : ''}${when} — ${e.device}`;
+      sel.appendChild(opt);
+    }
+    sel.value = forceSelectId || (sorted.some((e) => e.id === prev) ? prev : sorted[0].id);
+  }
+
   function loadFlightsList() {
-    db.ref('flights').orderByChild('meta/startedAt').limitToLast(30).once('value', (snap) => {
-      const sel = $('selFlight');
-      sel.innerHTML = '';
-      const entries = [];
-      snap.forEach((child) => {
-        const meta = child.val().meta || {};
-        entries.push({ id: child.key, startedAt: meta.startedAt || 0, device: meta.device || '?', active: meta.active === true });
+    const q = db.ref('flights').orderByChild('meta/startedAt').limitToLast(30);
+    q.once('value', (snap) => {
+      snap.forEach((child) => upsertFlightEntry(child.key, child.val().meta || {}));
+      renderFlightSelect();
+      const first = newestFlightId();
+      if (first) selectFlight(first);
+
+      // Só depois de carregar a lista inicial passamos a "ouvir" a coleção: assim, quando o app
+      // liga o envio de novo (um flightId novo, gerado por timestamp), o dashboard descobre o voo
+      // novo sozinho e — se o usuário não estiver revendo outro voo de propósito — passa a segui-lo,
+      // sem precisar recarregar a página.
+      q.on('child_added', (snap2) => {
+        const already = flightEntries.some((e) => e.id === snap2.key);
+        upsertFlightEntry(snap2.key, snap2.val().meta || {});
+        if (!already && autoFollowNewFlights) {
+          renderFlightSelect(snap2.key);
+          selectFlight(snap2.key);
+        } else {
+          renderFlightSelect();
+        }
       });
-      entries.sort((a, b) => b.startedAt - a.startedAt);
-      if (entries.length === 0) { sel.innerHTML = '<option>nenhum voo ainda</option>'; return; }
-      for (const e of entries) {
-        const opt = document.createElement('option');
-        opt.value = e.id;
-        const when = e.startedAt ? new Date(e.startedAt).toLocaleString('pt-BR') : e.id;
-        opt.textContent = `${e.active ? '🟢 ' : ''}${when} — ${e.device}`;
-        sel.appendChild(opt);
-      }
-      sel.value = entries[0].id;
-      selectFlight(entries[0].id);
+      q.on('child_changed', (snap2) => {
+        upsertFlightEntry(snap2.key, snap2.val().meta || {});
+        renderFlightSelect();
+      });
     });
   }
 
@@ -656,7 +693,14 @@
     if (R.on) loadFlightForReplay(flightId);
   }
 
-  $('selFlight').addEventListener('change', (e) => selectFlight(e.target.value));
+  $('selFlight').addEventListener('change', (e) => {
+    const chosen = e.target.value;
+    // Escolher o voo mais recente manualmente mantém o "seguir automaticamente" ligado;
+    // escolher um voo mais antigo (para rever) desliga, para não te tirar dele à força
+    // quando outro voo novo começar.
+    autoFollowNewFlights = chosen === newestFlightId();
+    selectFlight(chosen);
+  });
 
   $('btnExport').addEventListener('click', () => {
     if (!currentFlightId) return;

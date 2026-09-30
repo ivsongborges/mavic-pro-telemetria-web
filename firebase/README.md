@@ -64,7 +64,10 @@ aparece no terminal, algo como `https://SEU-PROJETO.web.app`.
 1. No app Android, ative o interruptor **"Enviar para a nuvem (Firebase)"**. O status abaixo dele mostra
    se conectou.
 2. Abra a URL do Hosting: o dropdown **Voo** lista as sessões enviadas (mais recente primeiro, com 🟢
-   nos voos em andamento).
+   nos voos em andamento). Não precisa recarregar a página depois de ligar o envio de novo no app —
+   um voo novo (cada vez que o interruptor liga, ganha um `flightId` novo) aparece e é seguido
+   automaticamente, a não ser que você já tenha escolhido outro voo na lista para rever; nesse caso
+   o dashboard não te tira dele até você escolher o mais recente de novo.
 3. **Exportar CSV** baixa o histórico do voo selecionado.
 4. **Replay**: alterne para o modo **Replay** no cabeçalho para reproduzir qualquer voo já gravado
    — barra de progresso (arraste ou clique nos gráficos para pular), play/pause, ±5 s, velocidade
