@@ -1,5 +1,7 @@
 # Mavic Pro — Telemetria em tempo real (DJI Mobile SDK V4)
 
+Repositório: <https://github.com/ivsongborges/mavic-pro-telemetria-web>
+
 O projeto tem duas partes independentes, que **não precisam ser usadas juntas**:
 
 ```
