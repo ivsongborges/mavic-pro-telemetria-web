@@ -33,7 +33,8 @@ só um deles:
 ## Envio local (UDP)
 ### Requisitos
 - Android Studio (Hedgehog ou mais novo) e JDK 11+ (o Android Studio já traz).
-- Celular Android 5.0+ (API 21), com cabo USB do controle remoto (Lightning/micro-USB/USB-C, conforme o RC).
+- Celular Android 6.0+ (API 23 — exigido pelo SDK do Firebase, mesmo se você só usar o envio local),
+  com cabo USB do controle remoto (Lightning/micro-USB/USB-C, conforme o RC).
 - Conta em <https://developer.dji.com> → *Apps* → *Create App*:
   - Tipo: **Android SDK**, package name: `com.dji.mavictelemetry` (ou o que você usar em `applicationId`).
   - Copie o **App Key**.

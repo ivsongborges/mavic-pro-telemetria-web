@@ -22,13 +22,17 @@ if (hasGoogleServices) {
 
 android {
     namespace 'com.dji.mavictelemetry'
-    compileSdkVersion 31
+    // AGP 8.13.2 (veja android/build.gradle) e o Firebase BoM exigem compileSdk mais novo;
+    // precisa da plataforma "Android 14 (API 34)" instalada no SDK Manager do Android Studio.
+    compileSdkVersion 34
 
     defaultConfig {
         // Deve ser IDÊNTICO ao package name cadastrado no App Key.
         applicationId "com.dji.mavictelemetry"
-        minSdkVersion 21
-        targetSdkVersion 30
+        // O SDK do Firebase exige minSdkVersion >= 23 (o merge do AndroidManifest falha com 21;
+        // veja firebase/README.md). Isso deixa de fora só Android 5.0/5.1 (Lollipop).
+        minSdkVersion 23
+        targetSdkVersion 34
         versionCode 1
         versionName "1.0"
         multiDexEnabled true

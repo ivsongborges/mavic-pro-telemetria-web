@@ -97,11 +97,10 @@ design (fica embutido no app/site), a segurança real vem das regras. Para restr
 - **`firebase deploy` pede billing/Blaze**: só acontece se você tentar usar Cloud Functions (não
   usadas aqui). Hosting + Realtime Database + Authentication anônima funcionam no plano Spark.
 - **Gradle reclama de "uses-sdk:minSdkVersion ... cannot be smaller than version ... declared in
-  library"**: versões recentes do SDK do Firebase para Android passaram a exigir `minSdkVersion 23`
-  (o app usa 21, para suportar Android 5.0+). A versão do BoM fixada em `android/app/build.gradle`
-  (`firebase-bom:33.1.2`, jul/2024) é anterior a essa mudança, mas se você atualizá-la e o erro
-  aparecer, suba `minSdkVersion` para `23` em `android/app/build.gradle` (isso deixa de fora
-  Android 5.0/5.1/6.0).
+  library"** (o merge do `AndroidManifest.xml` falha silenciosamente, sem gerar APK e sem erro
+  óbvio na tela): o SDK do Firebase para Android exige `minSdkVersion 23`. O projeto já usa 23
+  por causa disso (`android/app/build.gradle`) — isso deixa de fora só Android 5.0/5.1 (Lollipop).
+  Se você reverter para 21 achando que é mais compatível, o build volta a travar nesse ponto.
 
 ## Custos
 Plano Spark (gratuito), sem cartão cadastrado: Realtime Database 1 GB armazenado / 10 GB baixados por
