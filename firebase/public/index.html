@@ -56,6 +56,17 @@
   .msg { color: var(--muted); font-size: 12px; padding: 8px 0; }
   a.linklike { color: var(--accent); cursor: pointer; text-decoration: underline; }
 
+  .modeToggle { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .modeBtn { background: var(--panel2); border: none; border-radius: 0; padding: 6px 12px; }
+  .modeBtn.active { background: var(--accent); color: #06222f; font-weight: 700; }
+  .pill.replay .dot { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+
+  .replaybar { position: absolute; z-index: 1000; left: 10px; right: 10px; bottom: 10px;
+               display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 12px;
+               border-radius: 8px; background: rgba(23, 27, 34, .92); border: 1px solid var(--line); }
+  .replaybar input[type=range] { flex: 1; min-width: 120px; accent-color: var(--accent); }
+  #replayTime { font-variant-numeric: tabular-nums; color: var(--muted); white-space: nowrap; }
+
   @media (max-width: 860px) {
     main { grid-template-columns: 1fr; }
     .mapwrap { min-height: 260px; }
@@ -71,6 +82,10 @@
     Voo:
     <select id="selFlight"><option>carregando…</option></select>
   </label>
+  <div class="modeToggle">
+    <button id="btnModeLive" class="modeBtn active">Ao vivo</button>
+    <button id="btnModeReplay" class="modeBtn">Replay</button>
+  </div>
   <span class="pill off" id="pillLive"><span class="dot"></span><span id="liveText">sem dados</span></span>
   <div class="spacer"></div>
   <button id="btnExport">Exportar CSV</button>
@@ -79,6 +94,21 @@
 <main>
   <div class="mapwrap">
     <div id="map"></div>
+    <div class="replaybar" id="replayBar" hidden>
+      <button id="btnPlay" title="Reproduzir/Pausar (espaço)">▶</button>
+      <button id="btnBack5" title="-5 s (←)">-5s</button>
+      <button id="btnFwd5" title="+5 s (→)">+5s</button>
+      <input type="range" id="seek" min="0" max="0" value="0">
+      <span id="replayTime">--:-- / --:--</span>
+      <select id="speedSel" title="Velocidade">
+        <option value="0.5">0.5×</option>
+        <option value="1" selected>1×</option>
+        <option value="2">2×</option>
+        <option value="5">5×</option>
+        <option value="10">10×</option>
+        <option value="30">30×</option>
+      </select>
+    </div>
   </div>
 
   <div class="side">
@@ -148,7 +178,8 @@ let marker = null;
 let trail = L.polyline([], { color: "#38bdf8", weight: 3 }).addTo(map);
 let followDrone = true;
 
-function updateMap(lat, lon) {
+// Ao vivo: marca a posição e vai acrescentando à trilha, sempre que uma nova amostra chega.
+function updateMapLive(lat, lon) {
   if (typeof lat !== "number" || typeof lon !== "number") return;
   const pos = [lat, lon];
   if (!marker) {
@@ -163,8 +194,10 @@ function updateMap(lat, lon) {
 map.on("dragstart", () => { followDrone = false; });
 
 // ---- Estado "ao vivo / sem dados" ----
+let mode = "live"; // "live" | "replay"
 let lastMsgAt = 0;
 setInterval(() => {
+  if (mode !== "live") return; // em replay, o pill mostra o progresso, não a atualidade
   const ageS = lastMsgAt ? (Date.now() - lastMsgAt) / 1000 : Infinity;
   const pill = $("pillLive"), text = $("liveText");
   pill.classList.remove("live", "stale", "off");
@@ -173,8 +206,8 @@ setInterval(() => {
   else { pill.classList.add("stale"); text.textContent = `sem dados há ${Math.round(ageS)}s`; }
 }, 1000);
 
-function renderLive(v) {
-  lastMsgAt = Date.now();
+// Preenche os painéis (tiles/kv) — usado tanto ao vivo quanto no replay, sem mexer no mapa.
+function renderStats(v) {
   $("vAlt").innerHTML = fmt(v.alt) + '<span class="u">m</span>';
   $("vSpeed").innerHTML = fmt(v.speed_h) + '<span class="u">m/s</span>';
   $("vSats").textContent = v.sats ?? "--";
@@ -192,8 +225,146 @@ function renderLive(v) {
   $("vFlying").textContent = v.is_flying === true ? "sim" : v.is_flying === false ? "não" : "--";
   $("vMotors").textContent = v.motors_on === true ? "ligados" : v.motors_on === false ? "desligados" : "--";
   $("vFlightTime").textContent = v.flight_time_s ?? "--";
-  updateMap(v.lat, v.lon);
 }
+
+// ---- Replay ----
+let frames = [];          // amostras do voo em replay, ordenadas por tempo
+let frameFlightId = null; // de qual voo `frames` foi carregado
+let curIndex = 0;
+let playing = false;
+let playSpeed = 1;
+let playTimer = null;
+let fullPathLine = null;  // caminho completo do voo, tracejado
+let replayTrail = null;   // trecho já percorrido no replay
+
+function msToClock(ms) {
+  const s = Math.max(0, Math.round(ms / 1000));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
+function setMode(next) {
+  mode = next;
+  $("btnModeLive").classList.toggle("active", mode === "live");
+  $("btnModeReplay").classList.toggle("active", mode === "replay");
+  $("replayBar").hidden = mode !== "replay";
+  $("pillLive").hidden = mode !== "live";
+  stopPlayback();
+  if (mode === "live") {
+    if (fullPathLine) { map.removeLayer(fullPathLine); fullPathLine = null; }
+    if (replayTrail) { map.removeLayer(replayTrail); replayTrail = null; }
+    marker = null;
+    trail.setLatLngs([]);
+  } else {
+    loadFramesForReplay();
+  }
+}
+
+function loadFramesForReplay() {
+  if (!currentFlightId) return;
+  if (frameFlightId === currentFlightId && frames.length) { afterFramesLoaded(); return; }
+  $("replayTime").textContent = "carregando…";
+  db.ref("flights").child(currentFlightId).child("log").once("value", (snap) => {
+    const arr = [];
+    // Atenção: forEach do Firebase para a iteração se o callback retornar algo "truthy" —
+    // arr.push(...) retorna o novo tamanho (truthy a partir do 1º item), então o corpo
+    // precisa de chaves para não devolver esse valor sem querer.
+    snap.forEach((child) => { arr.push(child.val()); });
+    arr.sort((a, b) => (a.ts || 0) - (b.ts || 0));
+    frames = arr;
+    frameFlightId = currentFlightId;
+    afterFramesLoaded();
+  });
+}
+
+function afterFramesLoaded() {
+  if (mode !== "replay") return;
+  if (!frames.length) {
+    $("replayTime").textContent = "sem dados gravados";
+    return;
+  }
+  const path = frames.filter((f) => typeof f.lat === "number" && typeof f.lon === "number")
+                      .map((f) => [f.lat, f.lon]);
+  if (fullPathLine) map.removeLayer(fullPathLine);
+  fullPathLine = L.polyline(path, { color: "#38bdf8", weight: 2, opacity: .35, dashArray: "4,6" }).addTo(map);
+  if (replayTrail) map.removeLayer(replayTrail);
+  replayTrail = L.polyline([], { color: "#38bdf8", weight: 3 }).addTo(map);
+  marker = null;
+  if (path.length) map.fitBounds(path, { padding: [30, 30] });
+  $("seek").max = frames.length - 1;
+  seekTo(0);
+}
+
+function seekTo(index) {
+  if (!frames.length) return;
+  index = Math.max(0, Math.min(frames.length - 1, index));
+  curIndex = index;
+  const f = frames[index];
+  renderStats(f);
+  const t0 = frames[0].ts || 0, tN = frames[frames.length - 1].ts || 0, t = f.ts || 0;
+  $("seek").value = index;
+  $("replayTime").textContent = `${msToClock(t - t0)} / ${msToClock(tN - t0)}`;
+  if (typeof f.lat === "number" && typeof f.lon === "number") {
+    if (!marker) marker = L.circleMarker([f.lat, f.lon], { radius: 7, color: "#38bdf8", fillColor: "#38bdf8", fillOpacity: 1 }).addTo(map);
+    else marker.setLatLng([f.lat, f.lon]);
+  }
+  const played = frames.slice(0, index + 1)
+                        .filter((x) => typeof x.lat === "number" && typeof x.lon === "number")
+                        .map((x) => [x.lat, x.lon]);
+  if (replayTrail) replayTrail.setLatLngs(played);
+}
+
+function seekByMs(deltaMs) {
+  if (!frames.length) return;
+  const targetTs = (frames[curIndex].ts || 0) + deltaMs;
+  let best = 0, bestDiff = Infinity;
+  frames.forEach((f, i) => {
+    const d = Math.abs((f.ts || 0) - targetTs);
+    if (d < bestDiff) { bestDiff = d; best = i; }
+  });
+  seekTo(best);
+}
+
+function stopPlayback() {
+  playing = false;
+  $("btnPlay").textContent = "▶";
+  if (playTimer) { clearInterval(playTimer); playTimer = null; }
+}
+
+function startPlayback() {
+  if (!frames.length) return;
+  if (curIndex >= frames.length - 1) seekTo(0);
+  playing = true;
+  $("btnPlay").textContent = "⏸";
+  // Relógio virtual do replay: acumula tempo real * velocidade, independente do curIndex —
+  // sem isso, cada tick recomeçava a contagem do zero e o replay nunca avançava.
+  let playheadTs = frames[curIndex].ts || 0;
+  let last = performance.now();
+  playTimer = setInterval(() => {
+    const now = performance.now();
+    playheadTs += (now - last) * playSpeed;
+    last = now;
+    let idx = curIndex;
+    while (idx < frames.length - 1 && (frames[idx + 1].ts || 0) <= playheadTs) idx++;
+    if (idx !== curIndex) seekTo(idx);
+    if (idx >= frames.length - 1) stopPlayback();
+  }, 200);
+}
+
+$("btnModeLive").addEventListener("click", () => setMode("live"));
+$("btnModeReplay").addEventListener("click", () => setMode("replay"));
+$("btnPlay").addEventListener("click", () => (playing ? stopPlayback() : startPlayback()));
+$("btnBack5").addEventListener("click", () => { stopPlayback(); seekByMs(-5000); });
+$("btnFwd5").addEventListener("click", () => { stopPlayback(); seekByMs(5000); });
+$("seek").addEventListener("input", (e) => { stopPlayback(); seekTo(parseInt(e.target.value, 10)); });
+$("speedSel").addEventListener("change", (e) => { playSpeed = parseFloat(e.target.value); });
+
+document.addEventListener("keydown", (e) => {
+  if (mode !== "replay") return;
+  if (e.target.tagName === "SELECT" || e.target.tagName === "INPUT") return;
+  if (e.code === "Space") { e.preventDefault(); playing ? stopPlayback() : startPlayback(); }
+  else if (e.code === "ArrowRight") { stopPlayback(); seekByMs(e.shiftKey ? 30000 : 5000); }
+  else if (e.code === "ArrowLeft") { stopPlayback(); seekByMs(e.shiftKey ? -30000 : -5000); }
+});
 
 // ---- Firebase ----
 let db = null;
@@ -237,8 +408,10 @@ function selectFlight(flightId) {
   currentFlightId = flightId;
   if (liveRef) liveRef.off();
   if (logRef) logRef.off();
-  trail.setLatLngs([]);
-  marker = null;
+  if (mode === "live") {
+    trail.setLatLngs([]);
+    marker = null;
+  }
 
   const base = db.ref("flights").child(flightId);
   base.child("meta").once("value", (snap) => {
@@ -252,9 +425,12 @@ function selectFlight(flightId) {
 
   liveRef = base.child("live");
   liveRef.on("value", (snap) => {
+    if (mode !== "live") return; // em replay, atualizações ao vivo não mexem na tela
     const v = snap.val();
-    if (v) renderLive(v);
+    if (v) { lastMsgAt = Date.now(); renderStats(v); updateMapLive(v.lat, v.lon); }
   });
+
+  if (mode === "replay") loadFramesForReplay();
 }
 
 $("selFlight").addEventListener("change", (e) => selectFlight(e.target.value));

@@ -66,6 +66,16 @@ aparece no terminal, algo como `https://SEU-PROJETO.web.app`.
 2. Abra a URL do Hosting: o dropdown **Voo** lista as sessões enviadas (mais recente primeiro),
    com posição, bateria e estado de voo ao vivo no mapa e nos painéis.
 3. **Exportar CSV** baixa o histórico do voo selecionado.
+4. **Replay**: alterne para o modo **Replay** no cabeçalho para reproduzir qualquer voo já gravado
+   — barra de progresso (arraste para pular), play/pause, ±5 s, velocidade de 0,5× a 30×, o
+   caminho completo tracejado no mapa e a trilha já percorrida. Os dados vêm do que já está no
+   Realtime Database (mesmo `log/` usado pelo Exportar CSV) — não precisa do celular conectado.
+   Volte com **Ao vivo**.
+
+> "Conectado" (verde, sempre) é a página falando com o Firebase; "ao vivo" / "sem dados há Xs"
+> é se chegou telemetria recentemente. São coisas independentes — ao desligar o envio no app,
+> o normal é continuar "conectado" e passar a mostrar "sem dados há Xs" crescendo. Use o Replay
+> para rever o voo que acabou de terminar.
 
 ## Modelo de dados (Realtime Database)
 ```
